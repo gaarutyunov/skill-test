@@ -1,0 +1,3 @@
+name: student-report-service
+description: Semantic conventions for the student PDF report microservice.
+schema_url: https://github.com/gaarutyunov/skill-test/go-service/semconv/1.0.0

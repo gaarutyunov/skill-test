@@ -1,0 +1,10 @@
+# oapi-codegen configuration for the REPORT (this microservice) client.
+# Generates a typed client used by integration tests to call this service.
+package: report
+output: pkg/api/report/report.gen.go
+generate:
+  models: true
+  client: true
+output-options:
+  include-tags:
+    - report

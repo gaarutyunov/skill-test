@@ -37,6 +37,25 @@ Development MUST follow TDD, in this exact order:
 4. **Implement** the behaviour and run the tests until they pass (green).
 5. Refactor with the tests staying green.
 
+### Mocks (mandatory)
+
+- **Integration tests** use **no mocks** — real dependencies via testcontainers.
+- **Unit tests** MUST use **Uber's `go.uber.org/mock` (gomock + `mockgen`)** for
+  any test double. **NEVER** hand-roll mocks/stubs/fakes. Generate mocks from the
+  port interfaces with `mockgen` (see `make generate`).
+
+## Telemetry (mandatory)
+
+- **Always prefer official OpenTelemetry semantic conventions before inventing
+  attributes.** Before adding any telemetry attribute, check the official
+  conventions (the `go.opentelemetry.io/otel/semconv/<version>` package and the
+  [semantic-conventions registries](https://github.com/open-telemetry/semantic-conventions/tree/main/model)).
+  Use the official key/constant when one exists (e.g. `service.*`, `vcs.*`,
+  `http.*`, `url.*`, `server.*`, `error.type`, `code.*`).
+- Only define **project-specific** attributes (in the Weaver registry under
+  `go-service/semconv/registry`, generated into `pkg/semconv`) for concepts that
+  have **no** official convention (e.g. `report.*`, `student.id`, `adapter.*`).
+
 ## Go style rules
 
 - **NEVER** use explicit interface-satisfaction assertions such as
