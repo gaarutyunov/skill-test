@@ -6,11 +6,9 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/knadh/koanf/v2"
+	metricapi "go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/gaarutyunov/skill-test/go-service/internal/adapter"
@@ -20,17 +18,30 @@ import (
 	"github.com/gaarutyunov/skill-test/go-service/pkg/pdf"
 )
 
-// App is the composed application: an HTTP server plus its configuration.
-type App struct {
-	Server *http.Server
-	Config *config.Config
+// BackgroundStarter is an optional capability for components that run a
+// background goroutine bound to the application lifecycle (e.g. the upstream
+// session refresher).
+type BackgroundStarter interface {
+	Start(ctx context.Context)
 }
 
-// Run starts the HTTP server and blocks until the context is cancelled or an
-// OS interrupt is received, then shuts down gracefully.
+// App is the composed application: an HTTP server, its configuration and the
+// background components started alongside it.
+type App struct {
+	Server   *http.Server
+	Config   *config.Config
+	Starters []BackgroundStarter
+}
+
+// Run starts the background components and the HTTP server, then blocks until
+// the context is cancelled (an OS signal handled by the root command) and shuts
+// down gracefully.
 func (a *App) Run(ctx context.Context) error {
-	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	// Start background components (e.g. the session refresher) so the service can
+	// become ready before it starts accepting the first requests.
+	for _, s := range a.Starters {
+		s.Start(ctx)
+	}
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -64,17 +75,32 @@ func ProvideConfig(k *koanf.Koanf) (*config.Config, error) {
 	return config.Parse(k)
 }
 
-// ProvideTracerProvider builds the OTel tracer provider with a wire-style cleanup.
-func ProvideTracerProvider(ctx context.Context, cfg *config.Config) (trace.TracerProvider, func(), error) {
-	tp, shutdown, err := NewTracerProvider(ctx, cfg)
+// ProvideLogger returns the structured logger shared across the application.
+func ProvideLogger() *slog.Logger {
+	return slog.Default()
+}
+
+// ProvideTelemetry builds the OTel providers (traces + metrics) with a
+// wire-style cleanup that flushes and shuts them down.
+func ProvideTelemetry(ctx context.Context, cfg *config.Config) (*Telemetry, func(), error) {
+	t, err := NewTelemetry(ctx, cfg)
 	if err != nil {
 		return nil, nil, err
 	}
 	cleanup := func() {
-		_ = shutdown(context.Background())
+		_ = t.Shutdown(context.Background())
 	}
-	return tp, cleanup, nil
+	return t, cleanup, nil
 }
+
+// ProvideTracerProvider exposes the tracer provider from the telemetry bundle.
+func ProvideTracerProvider(t *Telemetry) trace.TracerProvider { return t.TracerProvider }
+
+// ProvideMeterProvider exposes the meter provider from the telemetry bundle.
+func ProvideMeterProvider(t *Telemetry) metricapi.MeterProvider { return t.MeterProvider }
+
+// ProvideMetricsHandler exposes the Prometheus scrape handler.
+func ProvideMetricsHandler(t *Telemetry) MetricsHandler { return t.MetricsHandler }
 
 // ProvidePDFClient builds the instrumented PDF client.
 func ProvidePDFClient(tp trace.TracerProvider) *pdf.Client {
@@ -82,8 +108,8 @@ func ProvidePDFClient(tp trace.TracerProvider) *pdf.Client {
 }
 
 // ProvideDependencies assembles the shared adapter dependencies.
-func ProvideDependencies(tp trace.TracerProvider, pdfClient *pdf.Client) adapter.Dependencies {
-	return adapter.Dependencies{TracerProvider: tp, PDF: pdfClient}
+func ProvideDependencies(tp trace.TracerProvider, mp metricapi.MeterProvider, logger *slog.Logger, pdfClient *pdf.Client) adapter.Dependencies {
+	return adapter.Dependencies{TracerProvider: tp, MeterProvider: mp, Logger: logger, PDF: pdfClient}
 }
 
 // ProvideRegistry builds the adapter registry.
@@ -106,7 +132,27 @@ func ProvideGenerateReport(repo port.StudentRepository, gen port.ReportGenerator
 	return usecase.NewGenerateReport(repo, gen, tp)
 }
 
-// ProvideApp assembles the App from the HTTP server and config.
-func ProvideApp(server *http.Server, cfg *config.Config) *App {
-	return &App{Server: server, Config: cfg}
+// ProvideStarters collects the background components that must run for the
+// application's lifetime. Adapters opt in by implementing BackgroundStarter.
+func ProvideStarters(repo port.StudentRepository) []BackgroundStarter {
+	var starters []BackgroundStarter
+	if s, ok := repo.(BackgroundStarter); ok {
+		starters = append(starters, s)
+	}
+	return starters
+}
+
+// ProvideReadinessCheckers collects the readiness checks surfaced by /readyz.
+// Adapters opt in by implementing ReadinessChecker.
+func ProvideReadinessCheckers(repo port.StudentRepository) []ReadinessChecker {
+	var checkers []ReadinessChecker
+	if c, ok := repo.(ReadinessChecker); ok {
+		checkers = append(checkers, c)
+	}
+	return checkers
+}
+
+// ProvideApp assembles the App from the HTTP server, config and starters.
+func ProvideApp(server *http.Server, cfg *config.Config, starters []BackgroundStarter) *App {
+	return &App{Server: server, Config: cfg, Starters: starters}
 }

@@ -22,8 +22,10 @@ adapters:
     type: http
     http:
       base_url: http://localhost:5007
-      username: admin@school-admin.com
-      password: 3OU4zn3q6Zh9
+      # Credentials are NEVER stored in config. `username_env`/`password_env` name
+      # the environment variables the credentials are read from at startup.
+      username_env: REPORT_UPSTREAM_USERNAME
+      password_env: REPORT_UPSTREAM_PASSWORD
       session_ttl: 10m
       retry:
         max_retries: 3

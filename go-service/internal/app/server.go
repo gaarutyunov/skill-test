@@ -1,11 +1,13 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	metricapi "go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/gaarutyunov/skill-test/go-service/internal/config"
@@ -13,37 +15,80 @@ import (
 	"github.com/gaarutyunov/skill-test/go-service/internal/usecase"
 )
 
-// NewHTTPHandler builds the fully instrumented http.Handler for the report API:
-// generated strict server -> generated router -> otelhttp middleware, plus a
-// health endpoint.
-func NewHTTPHandler(generate *usecase.GenerateReport, tp trace.TracerProvider) http.Handler {
+// ReadinessChecker reports whether a dependency is ready to serve traffic. It
+// backs the /readyz probe. A nil error means ready.
+type ReadinessChecker interface {
+	Ready(ctx context.Context) error
+}
+
+// NewHTTPHandler builds the fully instrumented http.Handler for the service:
+// generated strict server -> generated router -> otelhttp middleware for the API
+// routes, plus operational endpoints (Kubernetes health probes and a Prometheus
+// scrape endpoint) that are intentionally served outside the otel wrapper so
+// probes and scrapes don't pollute request traces/metrics.
+func NewHTTPHandler(generate *usecase.GenerateReport, tp trace.TracerProvider, mp metricapi.MeterProvider, metrics MetricsHandler, readiness []ReadinessChecker) http.Handler {
 	strict := server.NewStrictHandler(server.NewReportHandler(generate), nil)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	})
-
-	// Mount the generated API routes onto the mux. A custom error handler makes
-	// request-binding failures (e.g. a non-integer id -> 400) return the same
-	// JSON error envelope as every other error response.
+	// API mux: generated routes only.
+	apiMux := http.NewServeMux()
 	apiHandler := server.HandlerWithOptions(strict, server.StdHTTPServerOptions{
-		BaseRouter: mux,
+		BaseRouter: apiMux,
 		ErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
 			writeJSONError(w, http.StatusBadRequest, err.Error())
 		},
 	})
 
-	// Wrap everything with OpenTelemetry HTTP server instrumentation. It emits
-	// the official http.*/url.*/server.*/network.* span attributes.
-	return otelhttp.NewHandler(apiHandler, "report-api",
+	// Wrap the API with OpenTelemetry HTTP server instrumentation. It emits the
+	// official http.*/url.*/server.*/network.* span attributes on the tracer
+	// provider and http.server.* metrics on the meter provider.
+	instrumentedAPI := otelhttp.NewHandler(apiHandler, "report-api",
 		otelhttp.WithTracerProvider(tp),
+		otelhttp.WithMeterProvider(mp),
 		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
 			return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
 		}),
 	)
+
+	// Root mux: operational endpoints first, everything else to the API.
+	root := http.NewServeMux()
+
+	// Kubernetes health-check conventions:
+	// https://kubernetes.io/docs/reference/using-api/health-checks/
+	//   /livez  — liveness: the process is up and the event loop is responsive.
+	//   /readyz — readiness: every dependency is ready to serve traffic (here,
+	//             the upstream session has been established at least once).
+	root.HandleFunc("GET /livez", writeStatus("ok"))
+	root.HandleFunc("GET /readyz", readyzHandler(readiness))
+	// /healthz is retained as a backwards-compatible liveness alias.
+	root.HandleFunc("GET /healthz", writeStatus("ok"))
+
+	// Prometheus scrape endpoint, bound to the otel MeterProvider's metrics.
+	root.Handle("GET /metrics", metrics)
+
+	root.Handle("/", instrumentedAPI)
+	return root
+}
+
+// readyzHandler runs every readiness check and returns 503 until they all pass.
+func readyzHandler(checkers []ReadinessChecker) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		for _, c := range checkers {
+			if err := c.Ready(req.Context()); err != nil {
+				writeJSONError(w, http.StatusServiceUnavailable, err.Error())
+				return
+			}
+		}
+		writeStatus("ok")(w, req)
+	}
+}
+
+func writeStatus(status string) http.HandlerFunc {
+	body := []byte(fmt.Sprintf(`{"status":%q}`, status))
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
+	}
 }
 
 func writeJSONError(w http.ResponseWriter, status int, msg string) {

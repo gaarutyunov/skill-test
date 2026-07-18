@@ -174,6 +174,9 @@ type ClientInterface interface {
 
 	// GetStudentDetail Fetch the full detail of a single student.
 	//
+	// Requires an authenticated session obtained from `login`: the `accessToken`
+	// session cookie together with the matching `X-CSRF-Token` header.
+	//
 	// Corresponds with GET /api/v1/students/{id} (the `GetStudentDetail` operationId).
 	GetStudentDetail(ctx context.Context, id StudentId, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
@@ -213,6 +216,9 @@ func (c *Client) Login(ctx context.Context, body LoginJSONRequestBody, reqEditor
 }
 
 // GetStudentDetail Fetch the full detail of a single student.
+//
+// Requires an authenticated session obtained from `login`: the `accessToken`
+// session cookie together with the matching `X-CSRF-Token` header.
 //
 // Corresponds with GET /api/v1/students/{id} (the `GetStudentDetail` operationId).
 func (c *Client) GetStudentDetail(ctx context.Context, id StudentId, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -360,6 +366,9 @@ type ClientWithResponsesInterface interface {
 	LoginWithResponse(ctx context.Context, body LoginJSONRequestBody, reqEditors ...RequestEditorFn) (*LoginResponse, error)
 
 	// GetStudentDetailWithResponse Fetch the full detail of a single student.
+	//
+	// Requires an authenticated session obtained from `login`: the `accessToken`
+	// session cookie together with the matching `X-CSRF-Token` header.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -532,6 +541,9 @@ func (c *ClientWithResponses) LoginWithResponse(ctx context.Context, body LoginJ
 }
 
 // GetStudentDetailWithResponse Fetch the full detail of a single student.
+//
+// Requires an authenticated session obtained from `login`: the `accessToken`
+// session cookie together with the matching `X-CSRF-Token` header.
 //
 // Returns a wrapper object for the known response body format(s).
 //

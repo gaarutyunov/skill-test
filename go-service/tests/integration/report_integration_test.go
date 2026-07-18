@@ -191,6 +191,9 @@ func setupStack(ctx context.Context) (func(), error) {
 			Env: map[string]string{
 				"REPORT_ADAPTERS__STUDENT_REPOSITORY__HTTP__BASE_URL": "http://backend:5007",
 				"REPORT_TELEMETRY__EXPORTER":                          "stdout",
+				// Upstream credentials are injected via env (never config files).
+				"REPORT_UPSTREAM_USERNAME": "admin@school-admin.com",
+				"REPORT_UPSTREAM_PASSWORD": "3OU4zn3q6Zh9",
 			},
 			WaitingFor: wait.ForHTTP("/healthz").WithPort("8080/tcp").
 				WithStatusCodeMatcher(func(status int) bool { return status == http.StatusOK }).

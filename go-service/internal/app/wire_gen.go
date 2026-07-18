@@ -24,12 +24,15 @@ func InitializeApp(ctx context.Context, configPath string) (*App, func(), error)
 	if err != nil {
 		return nil, nil, err
 	}
-	tracerProvider, cleanup, err := ProvideTracerProvider(ctx, config)
+	telemetry, cleanup, err := ProvideTelemetry(ctx, config)
 	if err != nil {
 		return nil, nil, err
 	}
+	tracerProvider := ProvideTracerProvider(telemetry)
+	meterProvider := ProvideMeterProvider(telemetry)
+	logger := ProvideLogger()
 	client := ProvidePDFClient(tracerProvider)
-	dependencies := ProvideDependencies(tracerProvider, client)
+	dependencies := ProvideDependencies(tracerProvider, meterProvider, logger, client)
 	registry := ProvideRegistry(dependencies)
 	studentRepository, err := ProvideStudentRepository(registry, config, koanf)
 	if err != nil {
@@ -42,9 +45,12 @@ func InitializeApp(ctx context.Context, configPath string) (*App, func(), error)
 		return nil, nil, err
 	}
 	generateReport := ProvideGenerateReport(studentRepository, reportGenerator, tracerProvider)
-	handler := NewHTTPHandler(generateReport, tracerProvider)
+	metricsHandler := ProvideMetricsHandler(telemetry)
+	v := ProvideReadinessCheckers(studentRepository)
+	handler := NewHTTPHandler(generateReport, tracerProvider, meterProvider, metricsHandler, v)
 	server := NewHTTPServer(config, handler)
-	app := ProvideApp(server, config)
+	v2 := ProvideStarters(studentRepository)
+	app := ProvideApp(server, config, v2)
 	return app, func() {
 		cleanup()
 	}, nil
@@ -56,13 +62,19 @@ func InitializeApp(ctx context.Context, configPath string) (*App, func(), error)
 var providerSet = wire.NewSet(
 	ProvideKoanf,
 	ProvideConfig,
+	ProvideLogger,
+	ProvideTelemetry,
 	ProvideTracerProvider,
+	ProvideMeterProvider,
+	ProvideMetricsHandler,
 	ProvidePDFClient,
 	ProvideDependencies,
 	ProvideRegistry,
 	ProvideStudentRepository,
 	ProvideReportGenerator,
 	ProvideGenerateReport,
+	ProvideStarters,
+	ProvideReadinessCheckers,
 	NewHTTPHandler,
 	NewHTTPServer,
 	ProvideApp,

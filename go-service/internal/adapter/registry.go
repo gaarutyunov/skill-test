@@ -2,8 +2,10 @@ package adapter
 
 import (
 	"fmt"
+	"log/slog"
 
 	"github.com/knadh/koanf/v2"
+	metricapi "go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/gaarutyunov/skill-test/go-service/internal/config"
@@ -21,6 +23,8 @@ const (
 // Dependencies are the shared collaborators injected into every adapter factory.
 type Dependencies struct {
 	TracerProvider trace.TracerProvider
+	MeterProvider  metricapi.MeterProvider
+	Logger         *slog.Logger
 	PDF            *pdf.Client
 }
 
@@ -104,7 +108,7 @@ func httpStudentRepositoryFactory(deps Dependencies, settings *koanf.Koanf) (por
 			return nil, fmt.Errorf("decode http settings: %w", err)
 		}
 	}
-	return NewHTTPStudentRepository(cfg, deps.TracerProvider)
+	return NewHTTPStudentRepository(cfg, deps.TracerProvider, deps.MeterProvider, deps.Logger)
 }
 
 func pdfReportGeneratorFactory(deps Dependencies, settings *koanf.Koanf) (port.ReportGenerator, error) {

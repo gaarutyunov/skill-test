@@ -63,6 +63,12 @@ paths:
       tags: [upstream]
       operationId: getStudentDetail
       summary: Fetch the full detail of a single student.
+      description: |
+        Requires an authenticated session obtained from `login`: the `accessToken`
+        session cookie together with the matching `X-CSRF-Token` header.
+      security:
+        - sessionCookie: []
+          csrfToken: []
       parameters:
         - $ref: '#/components/parameters/StudentId'
       responses:
@@ -118,6 +124,20 @@ paths:
           $ref: '#/components/responses/InternalError'
 
 components:
+  securitySchemes:
+    # The upstream Node.js backend authenticates via a session cookie plus a
+    # double-submit CSRF token. Both are issued by the `login` operation.
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: accessToken
+      description: Session access token issued by login (via Set-Cookie).
+    csrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: CSRF token; must match the csrfToken cookie value.
+
   parameters:
     StudentId:
       name: id

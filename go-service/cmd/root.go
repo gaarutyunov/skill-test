@@ -2,6 +2,11 @@
 package cmd
 
 import (
+	"context"
+	"os"
+	"os/signal"
+	"syscall"
+
 	"github.com/spf13/cobra"
 
 	"github.com/gaarutyunov/skill-test/go-service/pkg/semconv"
@@ -26,7 +31,10 @@ func NewRootCommand() *cobra.Command {
 	return root
 }
 
-// Execute runs the root command.
+// Execute runs the root command with a context that is cancelled on SIGINT or
+// SIGTERM, giving every command a signal-aware context for graceful shutdown.
 func Execute() error {
-	return NewRootCommand().Execute()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return NewRootCommand().ExecuteContext(ctx)
 }

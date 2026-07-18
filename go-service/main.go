@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"log/slog"
 	"os"
 
@@ -9,8 +8,7 @@ import (
 )
 
 func main() {
-	root := cmd.NewRootCommand()
-	if err := root.ExecuteContext(context.Background()); err != nil {
+	if err := cmd.Execute(); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
 	}
