@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 
@@ -25,8 +26,15 @@ func NewHTTPHandler(generate *usecase.GenerateReport, tp trace.TracerProvider) h
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 
-	// Mount the generated API routes onto the mux.
-	apiHandler := server.HandlerFromMux(strict, mux)
+	// Mount the generated API routes onto the mux. A custom error handler makes
+	// request-binding failures (e.g. a non-integer id -> 400) return the same
+	// JSON error envelope as every other error response.
+	apiHandler := server.HandlerWithOptions(strict, server.StdHTTPServerOptions{
+		BaseRouter: mux,
+		ErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+		},
+	})
 
 	// Wrap everything with OpenTelemetry HTTP server instrumentation. It emits
 	// the official http.*/url.*/server.*/network.* span attributes.
@@ -36,6 +44,12 @@ func NewHTTPHandler(generate *usecase.GenerateReport, tp trace.TracerProvider) h
 			return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
 		}),
 	)
+}
+
+func writeJSONError(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
 // NewHTTPServer builds the *http.Server bound to the configured address.

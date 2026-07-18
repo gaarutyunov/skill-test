@@ -1,0 +1,72 @@
+# Local full-stack for hand-testing Problem 4:
+#   postgres (seeded) -> node backend -> go report service
+#
+# Usage:  make compose-up   (from go-service/)  then:
+#   curl -L http://localhost:8080/api/v1/students/2/report -o report.pdf
+name: student-report-stack
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: school_mgmt
+    ports:
+      - "5432:5432"
+    volumes:
+      - ../seed_db/tables.sql:/docker-entrypoint-initdb.d/01-tables.sql:ro
+      - ../seed_db/seed-db.sql:/docker-entrypoint-initdb.d/02-seed-db.sql:ro
+      - ./tests/integration/testdata/03-fixtures.sql:/docker-entrypoint-initdb.d/03-fixtures.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d school_mgmt"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: ../backend
+    environment:
+      PORT: "5007"
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/school_mgmt
+      JWT_ACCESS_TOKEN_SECRET: integration_access_secret
+      JWT_REFRESH_TOKEN_SECRET: integration_refresh_secret
+      CSRF_TOKEN_SECRET: integration_csrf_secret
+      JWT_ACCESS_TOKEN_TIME_IN_MS: "900000"
+      JWT_REFRESH_TOKEN_TIME_IN_MS: "28800000"
+      CSRF_TOKEN_TIME_IN_MS: "950000"
+      EMAIL_VERIFICATION_TOKEN_SECRET: integration_email_secret
+      EMAIL_VERIFICATION_TOKEN_TIME_IN_MS: "18000000"
+      PASSWORD_SETUP_TOKEN_SECRET: integration_pwd_secret
+      PASSWORD_SETUP_TOKEN_TIME_IN_MS: "300000"
+      MAIL_FROM_USER: noreply@school-example.com
+      RESEND_API_KEY: re_integration_dummy
+      UI_URL: http://localhost:5173
+      API_URL: http://localhost:5007
+      COOKIE_DOMAIN: localhost
+      NODE_ENV: production
+    ports:
+      - "5007:5007"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:5007/', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  service:
+    build:
+      context: .
+      args:
+        VERSION: local
+    environment:
+      REPORT_ADAPTERS__STUDENT_REPOSITORY__HTTP__BASE_URL: http://backend:5007
+      REPORT_TELEMETRY__EXPORTER: stdout
+    ports:
+      - "8080:8080"
+    depends_on:
+      backend:
+        condition: service_healthy

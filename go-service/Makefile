@@ -49,6 +49,11 @@ semconv-check: ## Validate the Weaver semantic-convention registry
 fmt: ## Format the code
 	gofmt -w $(shell find . -name '*.go' -not -name '*.gen.go' -not -name 'wire_gen.go')
 
+.PHONY: fmt-check
+fmt-check: ## Fail if any file is not gofmt-clean
+	@unformatted=$$(gofmt -l $$(find . -name '*.go' -not -name '*.gen.go' -not -name 'wire_gen.go')); \
+	if [ -n "$$unformatted" ]; then echo "Not gofmt-clean:"; echo "$$unformatted"; exit 1; fi
+
 .PHONY: lint
 lint: ## Run golangci-lint
 	golangci-lint run ./...
@@ -58,7 +63,7 @@ test-unit: ## Run unit tests with coverage
 	go test -race -covermode=atomic -coverprofile=coverage.out ./...
 
 .PHONY: check
-check: fmt lint test-unit ## Format, lint and unit-test (CI gate)
+check: fmt-check lint test-unit ## Verify format, lint and unit-test (CI gate)
 
 .PHONY: test-integration
 test-integration: ## Run integration tests (testcontainers; requires docker)

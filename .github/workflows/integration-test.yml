@@ -1,0 +1,42 @@
+name: integration-test
+
+on:
+  push:
+    branches: [main]
+    paths: ["go-service/**", "backend/**", "seed_db/**", ".github/workflows/integration-test.yml"]
+  pull_request:
+    paths: ["go-service/**", "backend/**", "seed_db/**", ".github/workflows/integration-test.yml"]
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: go-service
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.5"
+          cache-dependency-path: go-service/go.sum
+
+      - name: Run integration tests (testcontainers)
+        # CI's docker uses the json-file logging driver, which supports reading,
+        # so stream full container logs into the test output.
+        env:
+          TC_STREAM_CONTAINER_LOGS: "1"
+        run: make test-integration
+
+      - name: Upload student PDF artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: student-report-pdfs
+          path: go-service/tests/integration/artifacts/*.pdf
+          if-no-files-found: warn

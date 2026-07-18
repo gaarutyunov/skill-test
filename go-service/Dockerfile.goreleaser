@@ -1,0 +1,9 @@
+# Dockerfile used by goreleaser: packages the pre-built binary (no in-image
+# compilation). See Dockerfile for the from-source multi-stage build.
+FROM gcr.io/distroless/static-debian12:nonroot
+WORKDIR /
+COPY report-service /report-service
+COPY configs /configs
+EXPOSE 8080
+ENTRYPOINT ["/report-service"]
+CMD ["serve", "--config", "/configs/config.yaml"]
