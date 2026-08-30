@@ -1,0 +1,47 @@
+# Report microservice configuration.
+#
+# Loaded by goga/config, which merges defaults, this file and the environment in
+# one fixed order: defaults -> file -> environment. Every key below can be
+# overridden by an environment variable named after its key path, with "REPORT"
+# as the prefix, "__" between path segments and "_" left literal inside one:
+#
+#   REPORT__SERVER__PORT=9090                    -> server.port
+#   REPORT__ADAPTERS__STUDENT_REPOSITORY__HTTP__BASE_URL=...
+#
+# Adapters bind each hexagonal port to a named implementation. The settings for
+# the selected implementation live under adapters.<port>.<type>, so you can
+# switch adapters by changing `type` without touching code.
+
+server:
+  host: 0.0.0.0
+  port: 8080
+  read_timeout: 15s
+  write_timeout: 30s
+  shutdown_timeout: 10s
+
+telemetry:
+  # exporter: stdout | otlp | none
+  exporter: stdout
+  otlp_endpoint: localhost:4317
+  sample_ratio: 1.0
+
+adapters:
+  student_repository:
+    type: http
+    http:
+      base_url: http://localhost:5007
+      # Credentials are NEVER written here. `username` and `password` are
+      # ordinary keys of this subtree, supplied by the environment:
+      #   REPORT__ADAPTERS__STUDENT_REPOSITORY__HTTP__USERNAME
+      #   REPORT__ADAPTERS__STUDENT_REPOSITORY__HTTP__PASSWORD
+      session_ttl: 10m
+      retry:
+        max_retries: 3
+        wait_min: 200ms
+        wait_max: 2s
+
+  report_generator:
+    type: pdf
+    pdf:
+      title: Student Report
+      organization: Greenwood High School

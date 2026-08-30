@@ -1,0 +1,74 @@
+version: 2
+
+project_name: report-service
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: report-service
+    main: .
+    binary: report-service
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X github.com/gaarutyunov/skill-test/go-service/pkg/semconv.Version={{ .Version }}
+      - -X github.com/gaarutyunov/skill-test/go-service/pkg/semconv.Revision={{ .FullCommit }}
+      - -X github.com/gaarutyunov/skill-test/go-service/pkg/semconv.Tag={{ .Tag }}
+      - -X github.com/gaarutyunov/skill-test/go-service/pkg/semconv.Date={{ .Date }}
+      - -X github.com/gaarutyunov/skill-test/go-service/pkg/semconv.Repository=https://github.com/gaarutyunov/skill-test
+
+archives:
+  - formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude: ["^docs:", "^test:", "^chore:"]
+
+dockers:
+  - image_templates:
+      - "ghcr.io/gaarutyunov/skill-test/report-service:{{ .Version }}-amd64"
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    goos: linux
+    goarch: amd64
+    extra_files:
+      - configs
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.source=https://github.com/gaarutyunov/skill-test"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+  - image_templates:
+      - "ghcr.io/gaarutyunov/skill-test/report-service:{{ .Version }}-arm64"
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    goos: linux
+    goarch: arm64
+    extra_files:
+      - configs
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.source=https://github.com/gaarutyunov/skill-test"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+
+docker_manifests:
+  - name_template: "ghcr.io/gaarutyunov/skill-test/report-service:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/gaarutyunov/skill-test/report-service:{{ .Version }}-amd64"
+      - "ghcr.io/gaarutyunov/skill-test/report-service:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/gaarutyunov/skill-test/report-service:latest"
+    image_templates:
+      - "ghcr.io/gaarutyunov/skill-test/report-service:{{ .Version }}-amd64"
+      - "ghcr.io/gaarutyunov/skill-test/report-service:{{ .Version }}-arm64"

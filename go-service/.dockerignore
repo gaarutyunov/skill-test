@@ -1,0 +1,7 @@
+bin
+dist
+coverage.out
+coverage.html
+tests/integration/artifacts
+*.pdf
+.git

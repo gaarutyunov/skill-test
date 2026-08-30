@@ -1,0 +1,8 @@
+# Weaver code-generation config for the Go semantic-conventions target.
+# Generates pkg/semconv/attributes.go from the registry.
+acronyms: ["ID", "HTTP", "PDF", "URL", "API"]
+
+templates:
+  - pattern: attributes.go.j2
+    filter: semconv_attributes
+    application_mode: single

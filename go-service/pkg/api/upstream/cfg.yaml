@@ -1,0 +1,10 @@
+# oapi-codegen configuration for the UPSTREAM (Node.js backend) client.
+# Generates typed models + HTTP client for the endpoints this service consumes.
+package: upstream
+output: pkg/api/upstream/upstream.gen.go
+generate:
+  models: true
+  client: true
+output-options:
+  include-tags:
+    - upstream

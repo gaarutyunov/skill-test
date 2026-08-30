@@ -1,0 +1,12 @@
+# oapi-codegen configuration for the REPORT server (this microservice).
+# Generates a strict net/http server + embedded spec for the report API.
+package: server
+output: internal/server/server.gen.go
+generate:
+  models: true
+  std-http-server: true
+  strict-server: true
+  embedded-spec: true
+output-options:
+  include-tags:
+    - report

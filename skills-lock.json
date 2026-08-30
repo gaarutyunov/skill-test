@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "skills": {
+    "golang-pro": {
+      "source": "jeffallan/claude-skills",
+      "sourceType": "github",
+      "skillPath": "skills/golang-pro/SKILL.md",
+      "computedHash": "12b4cac8f65228f82cbc26f0da9232aba87ffa45ccd01afa3998fb8ec61dc288"
+    },
+    "otel-instrumentation": {
+      "source": "dash0hq/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/otel-instrumentation/SKILL.md",
+      "computedHash": "f34dc69178aaa4c6d91e54de54c1a98f8bfc38c98f6d26b89b18bf5a8cadfa11"
+    },
+    "tdd": {
+      "source": "mattpocock/skills",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/tdd/SKILL.md",
+      "computedHash": "81eca2a5b53a63f481c0849be7a663a8cd43d5cf53f32b644ec0a2f50cf91aa2"
+    },
+    "testcontainers-go": {
+      "source": "testcontainers/claude-skills",
+      "sourceType": "github",
+      "skillPath": "plugins/testcontainers/skills/testcontainers-go/SKILL.md",
+      "computedHash": "cd2d0205bfbdd95c46d8191202604c28f1862a406ef883488b084851da0c0501"
+    }
+  }
+}

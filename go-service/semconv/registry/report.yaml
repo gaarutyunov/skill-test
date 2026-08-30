@@ -1,0 +1,77 @@
+groups:
+  - id: registry.student
+    type: attribute_group
+    brief: Attributes describing the student a report targets.
+    attributes:
+      - id: student.id
+        type: int
+        stability: development
+        brief: Unique identifier of the student (users.id in the backend).
+        examples: [42]
+
+  - id: registry.report
+    type: attribute_group
+    brief: Attributes describing a generated report.
+    attributes:
+      - id: report.format
+        type: string
+        stability: development
+        brief: Output format of the generated report.
+        examples: ["pdf"]
+      - id: report.size_bytes
+        type: int
+        stability: development
+        brief: Size in bytes of the generated report payload.
+        examples: [20481]
+      - id: report.file_name
+        type: string
+        stability: development
+        brief: Suggested download file name of the report.
+        examples: ["student-42-report.pdf"]
+      - id: report.page_count
+        type: int
+        stability: development
+        brief: Number of pages in the generated PDF document.
+        examples: [1]
+
+  - id: registry.adapter
+    type: attribute_group
+    brief: Hexagonal adapter wiring attributes.
+    attributes:
+      - id: adapter.port
+        type: string
+        stability: development
+        brief: Hexagonal port name the adapter is bound to.
+        examples: ["student_repository", "report_generator"]
+      - id: adapter.name
+        type: string
+        stability: development
+        brief: Configured adapter implementation name.
+        examples: ["http", "pdf"]
+
+  - id: registry.build
+    type: attribute_group
+    brief: >
+      Build metadata that has no official OpenTelemetry convention. Service and
+      VCS metadata use the official semconv (service.*, vcs.*); only the build
+      timestamp is project-specific because no official attribute exists for it.
+    attributes:
+      - id: build.date
+        type: string
+        stability: development
+        brief: RFC3339 timestamp at which the binary was built.
+        examples: ["2026-07-18T12:00:00Z"]
+
+  - id: registry.upstream
+    type: attribute_group
+    brief: >
+      Attributes describing calls to the upstream Node.js backend. HTTP-level
+      attributes (http.response.status_code, url.full, server.address, ...) use
+      the official conventions and are emitted by otelhttp; only the logical
+      operation name is project-specific.
+    attributes:
+      - id: upstream.operation
+        type: string
+        stability: development
+        brief: Logical upstream operation invoked.
+        examples: ["login", "getStudentDetail"]
