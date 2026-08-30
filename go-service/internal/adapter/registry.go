@@ -67,8 +67,8 @@ func (r *Registry) RegisterReportGenerator(name string, f ReportGeneratorFactory
 
 // BuildStudentRepository constructs the StudentRepository adapter named by the
 // config binding for the student_repository port.
-func (r *Registry) BuildStudentRepository(cfg *config.Config, k *koanf.Koanf) (port.StudentRepository, error) {
-	settings, name, err := cfg.AdapterSettings(k, PortStudentRepository)
+func (r *Registry) BuildStudentRepository(cfg *config.Loaded) (port.StudentRepository, error) {
+	settings, name, err := config.AdapterSettings(cfg, PortStudentRepository)
 	if err != nil {
 		return nil, err
 	}
@@ -85,8 +85,8 @@ func (r *Registry) BuildStudentRepository(cfg *config.Config, k *koanf.Koanf) (p
 
 // BuildReportGenerator constructs the ReportGenerator adapter named by the
 // config binding for the report_generator port.
-func (r *Registry) BuildReportGenerator(cfg *config.Config, k *koanf.Koanf) (port.ReportGenerator, error) {
-	settings, name, err := cfg.AdapterSettings(k, PortReportGenerator)
+func (r *Registry) BuildReportGenerator(cfg *config.Loaded) (port.ReportGenerator, error) {
+	settings, name, err := config.AdapterSettings(cfg, PortReportGenerator)
 	if err != nil {
 		return nil, err
 	}

@@ -63,11 +63,11 @@ services:
       args:
         VERSION: local
     environment:
-      REPORT_ADAPTERS__STUDENT_REPOSITORY__HTTP__BASE_URL: http://backend:5007
-      REPORT_TELEMETRY__EXPORTER: stdout
+      REPORT__ADAPTERS__STUDENT_REPOSITORY__HTTP__BASE_URL: http://backend:5007
+      REPORT__TELEMETRY__EXPORTER: stdout
       # Upstream credentials are injected via env, never stored in config files.
-      REPORT_UPSTREAM_USERNAME: admin@school-admin.com
-      REPORT_UPSTREAM_PASSWORD: 3OU4zn3q6Zh9
+      REPORT__ADAPTERS__STUDENT_REPOSITORY__HTTP__USERNAME: admin@school-admin.com
+      REPORT__ADAPTERS__STUDENT_REPOSITORY__HTTP__PASSWORD: 3OU4zn3q6Zh9
     ports:
       - "8080:8080"
     depends_on:

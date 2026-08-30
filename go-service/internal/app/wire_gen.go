@@ -16,14 +16,11 @@ import (
 // InitializeApp builds a fully wired App from a config path. The returned
 // cleanup function shuts the tracer provider down.
 func InitializeApp(ctx context.Context, configPath string) (*App, func(), error) {
-	koanf, err := ProvideKoanf(configPath)
+	v, err := ProvideLoadedConfig(ctx, configPath)
 	if err != nil {
 		return nil, nil, err
 	}
-	config, err := ProvideConfig(koanf)
-	if err != nil {
-		return nil, nil, err
-	}
+	config := ProvideConfig(v)
 	telemetry, cleanup, err := ProvideTelemetry(ctx, config)
 	if err != nil {
 		return nil, nil, err
@@ -34,23 +31,23 @@ func InitializeApp(ctx context.Context, configPath string) (*App, func(), error)
 	client := ProvidePDFClient(tracerProvider)
 	dependencies := ProvideDependencies(tracerProvider, meterProvider, logger, client)
 	registry := ProvideRegistry(dependencies)
-	studentRepository, err := ProvideStudentRepository(registry, config, koanf)
+	studentRepository, err := ProvideStudentRepository(registry, v)
 	if err != nil {
 		cleanup()
 		return nil, nil, err
 	}
-	reportGenerator, err := ProvideReportGenerator(registry, config, koanf)
+	reportGenerator, err := ProvideReportGenerator(registry, v)
 	if err != nil {
 		cleanup()
 		return nil, nil, err
 	}
 	generateReport := ProvideGenerateReport(studentRepository, reportGenerator, tracerProvider)
 	metricsHandler := ProvideMetricsHandler(telemetry)
-	v := ProvideReadinessCheckers(studentRepository)
-	handler := NewHTTPHandler(generateReport, tracerProvider, meterProvider, metricsHandler, v)
+	v2 := ProvideReadinessCheckers(studentRepository)
+	handler := NewHTTPHandler(generateReport, tracerProvider, meterProvider, metricsHandler, v2)
 	server := NewHTTPServer(config, handler)
-	v2 := ProvideStarters(studentRepository)
-	app := ProvideApp(server, config, v2)
+	v3 := ProvideStarters(studentRepository)
+	app := ProvideApp(server, config, v3)
 	return app, func() {
 		cleanup()
 	}, nil
@@ -60,7 +57,7 @@ func InitializeApp(ctx context.Context, configPath string) (*App, func(), error)
 
 // providerSet is the full dependency graph of the application.
 var providerSet = wire.NewSet(
-	ProvideKoanf,
+	ProvideLoadedConfig,
 	ProvideConfig,
 	ProvideLogger,
 	ProvideTelemetry,

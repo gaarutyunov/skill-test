@@ -1,5 +1,13 @@
 # Report microservice configuration.
 #
+# Loaded by goga/config, which merges defaults, this file and the environment in
+# one fixed order: defaults -> file -> environment. Every key below can be
+# overridden by an environment variable named after its key path, with "REPORT"
+# as the prefix, "__" between path segments and "_" left literal inside one:
+#
+#   REPORT__SERVER__PORT=9090                    -> server.port
+#   REPORT__ADAPTERS__STUDENT_REPOSITORY__HTTP__BASE_URL=...
+#
 # Adapters bind each hexagonal port to a named implementation. The settings for
 # the selected implementation live under adapters.<port>.<type>, so you can
 # switch adapters by changing `type` without touching code.
@@ -22,10 +30,10 @@ adapters:
     type: http
     http:
       base_url: http://localhost:5007
-      # Credentials are NEVER stored in config. `username_env`/`password_env` name
-      # the environment variables the credentials are read from at startup.
-      username_env: REPORT_UPSTREAM_USERNAME
-      password_env: REPORT_UPSTREAM_PASSWORD
+      # Credentials are NEVER written here. `username` and `password` are
+      # ordinary keys of this subtree, supplied by the environment:
+      #   REPORT__ADAPTERS__STUDENT_REPOSITORY__HTTP__USERNAME
+      #   REPORT__ADAPTERS__STUDENT_REPOSITORY__HTTP__PASSWORD
       session_ttl: 10m
       retry:
         max_retries: 3
