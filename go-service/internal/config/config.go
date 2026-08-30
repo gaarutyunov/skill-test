@@ -1,16 +1,23 @@
-// Package config loads the service configuration from a YAML file using koanf.
+// Package config loads the service configuration through goga/config, which
+// merges defaults, the YAML file and the environment in one fixed order and
+// decodes the result into [Config].
 package config
 
 import (
+	"context"
 	"fmt"
 	"time"
 
+	gogaconfig "github.com/gaarutyunov/goga/config"
 	"github.com/go-viper/mapstructure/v2"
-	"github.com/knadh/koanf/parsers/yaml"
-	"github.com/knadh/koanf/providers/env"
-	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
 )
+
+// EnvPrefix is the environment prefix goga/config reads. Following the goga
+// convention, "__" separates key-path segments and "_" is a literal underscore
+// inside one, so REPORT__ADAPTERS__STUDENT_REPOSITORY__HTTP__BASE_URL sets
+// adapters.student_repository.http.base_url.
+const EnvPrefix = "REPORT"
 
 // Config is the top-level, strongly-typed service configuration.
 type Config struct {
@@ -46,51 +53,58 @@ type AdapterBinding struct {
 	Type string `koanf:"type"`
 }
 
-// LoadKoanf reads the YAML file and REPORT_-prefixed environment overrides into
-// a koanf instance. The raw koanf is needed by the adapter registry to decode
-// per-adapter settings.
-func LoadKoanf(path string) (*koanf.Koanf, error) {
-	k := koanf.New(".")
+// Loaded is a loaded service configuration: the decoded [Config] plus the
+// merged koanf handle it was decoded from.
+//
+// The handle is what makes the adapter registry possible: an adapter is
+// configured from the subtree [AdapterSettings] cuts, so it never learns the
+// application's configuration struct and the application never grows a field
+// per adapter.
+type Loaded = gogaconfig.Config[Config]
 
-	if path != "" {
-		if err := k.Load(file.Provider(path), yaml.Parser()); err != nil {
-			return nil, fmt.Errorf("load config file %q: %w", path, err)
-		}
-	}
-
-	// Environment overrides: REPORT_SERVER__PORT=9090 -> server.port
-	if err := k.Load(env.Provider("REPORT_", ".", normalizeEnvKey), nil); err != nil {
-		return nil, fmt.Errorf("load env overrides: %w", err)
-	}
-	return k, nil
+// Load reads the configuration from defaults, the YAML file at path (absence is
+// not an error) and REPORT-prefixed environment variables, in that fixed order.
+//
+// This is the one-line instantiation of the generic goga/config loader. It lives
+// here, next to the type it is instantiated with, because wire cannot provide a
+// generic function: wire's generator works from concrete types and there is no
+// way to name config.Load[Config] in a provider set. Everything downstream of
+// this call — see internal/app — is wired normally.
+func Load(ctx context.Context, path string) (*Loaded, error) {
+	return gogaconfig.Load[Config](ctx,
+		gogaconfig.WithDefaults(Defaults()),
+		gogaconfig.WithFile(path),
+		gogaconfig.WithEnv(EnvPrefix),
+	)
 }
 
-// Parse decodes a koanf instance into the strongly-typed Config, applying defaults.
-func Parse(k *koanf.Koanf) (*Config, error) {
-	var cfg Config
-	if err := Unmarshal(k, "", &cfg); err != nil {
-		return nil, fmt.Errorf("decode config: %w", err)
+// Defaults is the lowest-precedence source: the values the service runs on when
+// neither the file nor the environment sets them.
+//
+// They are a source rather than a post-decode fixup, so that an operator who
+// explicitly writes `telemetry.sample_ratio: 0` gets zero sampling instead of
+// having it silently promoted back to 1.0.
+func Defaults() map[string]any {
+	return map[string]any{
+		"server.host":             "0.0.0.0",
+		"server.port":             8080,
+		"server.read_timeout":     15 * time.Second,
+		"server.write_timeout":    30 * time.Second,
+		"server.shutdown_timeout": 10 * time.Second,
+		"telemetry.exporter":      "stdout",
+		"telemetry.sample_ratio":  1.0,
 	}
-	cfg.applyDefaults()
-	return &cfg, nil
 }
 
-// Load reads configuration from the given YAML file and returns both the typed
-// config and the raw koanf instance. Convenience wrapper over LoadKoanf + Parse.
-func Load(path string) (*Config, *koanf.Koanf, error) {
-	k, err := LoadKoanf(path)
-	if err != nil {
-		return nil, nil, err
-	}
-	cfg, err := Parse(k)
-	if err != nil {
-		return nil, nil, err
-	}
-	return cfg, k, nil
-}
-
-// Unmarshal decodes the koanf subtree at path into out, applying the standard
-// decode hooks (string -> time.Duration, comma-separated -> slice).
+// Unmarshal decodes the koanf subtree at path into out.
+//
+// It exists because [gogaconfig.Config.Cut] hands back a bare *koanf.Koanf and
+// goga/config does not export the decoder it used for the top-level value. A
+// module configured from a subtree — an adapter here — therefore has to
+// reproduce goga's decoder itself, and the two must agree: same "koanf" tag,
+// same WeaklyTypedInput (every value arriving from the environment is a string),
+// and the same duration/slice hooks. Adapter settings like `session_ttl: 10m`
+// depend on all three.
 func Unmarshal(k *koanf.Koanf, path string, out any) error {
 	return k.UnmarshalWithConf(path, out, koanf.UnmarshalConf{
 		Tag: "koanf",
@@ -107,64 +121,17 @@ func Unmarshal(k *koanf.Koanf, path string, out any) error {
 }
 
 // AdapterSettings returns the koanf subtree holding the settings for the adapter
-// bound to the given port (adapters.<port>.<type>).
-func (c *Config) AdapterSettings(k *koanf.Koanf, port string) (*koanf.Koanf, string, error) {
-	binding, ok := c.Adapters[port]
+// bound to the given port (adapters.<port>.<type>), and the adapter's name.
+func AdapterSettings(cfg *Loaded, port string) (*koanf.Koanf, string, error) {
+	binding, ok := cfg.Value.Adapters[port]
 	if !ok {
 		return nil, "", fmt.Errorf("no adapter configured for port %q", port)
 	}
 	if binding.Type == "" {
 		return nil, "", fmt.Errorf("adapter for port %q has no type", port)
 	}
-	sub := k.Cut(fmt.Sprintf("adapters.%s.%s", port, binding.Type))
+	// Cut on the MERGED handle, so an adapter setting supplied by the
+	// environment reaches the adapter exactly like one written in the file.
+	sub := cfg.Cut(fmt.Sprintf("adapters.%s.%s", port, binding.Type))
 	return sub, binding.Type, nil
-}
-
-func (c *Config) applyDefaults() {
-	if c.Server.Host == "" {
-		c.Server.Host = "0.0.0.0"
-	}
-	if c.Server.Port == 0 {
-		c.Server.Port = 8080
-	}
-	if c.Server.ReadTimeout == 0 {
-		c.Server.ReadTimeout = 15 * time.Second
-	}
-	if c.Server.WriteTimeout == 0 {
-		c.Server.WriteTimeout = 30 * time.Second
-	}
-	if c.Server.ShutdownTimeout == 0 {
-		c.Server.ShutdownTimeout = 10 * time.Second
-	}
-	if c.Telemetry.Exporter == "" {
-		c.Telemetry.Exporter = "stdout"
-	}
-	if c.Telemetry.SampleRatio == 0 {
-		c.Telemetry.SampleRatio = 1.0
-	}
-}
-
-func normalizeEnvKey(s string) string {
-	// REPORT_SERVER__PORT -> server.port ; single underscores are literal.
-	out := make([]rune, 0, len(s))
-	s = s[len("REPORT_"):]
-	i := 0
-	runes := []rune(s)
-	for i < len(runes) {
-		if runes[i] == '_' && i+1 < len(runes) && runes[i+1] == '_' {
-			out = append(out, '.')
-			i += 2
-			continue
-		}
-		out = append(out, toLower(runes[i]))
-		i++
-	}
-	return string(out)
-}
-
-func toLower(r rune) rune {
-	if r >= 'A' && r <= 'Z' {
-		return r + ('a' - 'A')
-	}
-	return r
 }

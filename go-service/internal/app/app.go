@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/knadh/koanf/v2"
 	metricapi "go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
@@ -65,14 +64,22 @@ func (a *App) Run(ctx context.Context) error {
 
 // --- Wire providers ---
 
-// ProvideKoanf loads the raw koanf instance from the given config path.
-func ProvideKoanf(path string) (*koanf.Koanf, error) {
-	return config.LoadKoanf(path)
+// ProvideLoadedConfig loads the configuration through goga/config.
+//
+// It is a thin wrapper over config.Load, which holds the one generic
+// instantiation the project has to write itself: config.Load[Config] cannot be
+// a wire provider, because wire generates code from concrete types and cannot
+// name a type argument. Everything below this line is wired normally.
+func ProvideLoadedConfig(ctx context.Context, path string) (*config.Loaded, error) {
+	return config.Load(ctx, path)
 }
 
-// ProvideConfig parses the typed config from the koanf instance.
-func ProvideConfig(k *koanf.Koanf) (*config.Config, error) {
-	return config.Parse(k)
+// ProvideConfig exposes the decoded value, so that every component that only
+// needs the typed configuration keeps depending on *config.Config rather than on
+// the loader. The merged koanf handle stays available to the adapter registry,
+// which cuts a subtree per adapter.
+func ProvideConfig(l *config.Loaded) *config.Config {
+	return &l.Value
 }
 
 // ProvideLogger returns the structured logger shared across the application.
@@ -118,13 +125,13 @@ func ProvideRegistry(deps adapter.Dependencies) *adapter.Registry {
 }
 
 // ProvideStudentRepository builds the configured StudentRepository adapter.
-func ProvideStudentRepository(reg *adapter.Registry, cfg *config.Config, k *koanf.Koanf) (port.StudentRepository, error) {
-	return reg.BuildStudentRepository(cfg, k)
+func ProvideStudentRepository(reg *adapter.Registry, cfg *config.Loaded) (port.StudentRepository, error) {
+	return reg.BuildStudentRepository(cfg)
 }
 
 // ProvideReportGenerator builds the configured ReportGenerator adapter.
-func ProvideReportGenerator(reg *adapter.Registry, cfg *config.Config, k *koanf.Koanf) (port.ReportGenerator, error) {
-	return reg.BuildReportGenerator(cfg, k)
+func ProvideReportGenerator(reg *adapter.Registry, cfg *config.Loaded) (port.ReportGenerator, error) {
+	return reg.BuildReportGenerator(cfg)
 }
 
 // ProvideGenerateReport builds the GenerateReport use case.

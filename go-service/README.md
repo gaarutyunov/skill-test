@@ -48,9 +48,56 @@ cmd/ (cobra)  ──►  internal/app (wire composition root)
 
 ## Configuration
 
-Config is loaded with [`koanf`](https://github.com/knadh/koanf) from a YAML file
-(`configs/config.yaml`), with `REPORT_`-prefixed environment overrides. Adapters
-are selected by name so you can switch implementations without code changes:
+Config is loaded with [`goga/config`](https://github.com/gaarutyunov/goga), the
+workspace's shared loader over [`koanf`](https://github.com/knadh/koanf). It
+merges every source in one fixed order:
+
+```
+defaults  →  configs/config.yaml  →  environment
+```
+
+Later beats earlier. The order lives inside `config.Load` and is **not** derived
+from the order the options are passed, which is the whole reason the service does
+not wire koanf itself. A config file that is absent is not an error — the common
+production deployment is environment variables only.
+
+### Environment overrides
+
+Every key can be set from the environment. The variable name is the key path with
+the `REPORT` prefix, `__` between path segments and `_` left literal *inside* a
+segment:
+
+```
+REPORT__SERVER__PORT=9090                                     ->  server.port
+REPORT__ADAPTERS__STUDENT_REPOSITORY__HTTP__BASE_URL=…         ->  adapters.student_repository.http.base_url
+```
+
+The two-underscore separator is what makes `student_repository` expressible at
+all; a single underscore for both jobs would read it as `student.repository`.
+
+> Migrating from an older checkout: the prefix boundary changed from one
+> underscore to two. `REPORT_SERVER__PORT` is now `REPORT__SERVER__PORT`.
+
+### Defaults
+
+`config.Defaults()` is the lowest-precedence *source*, not a post-decode fixup,
+so `telemetry.sample_ratio: 0` in the file means zero sampling instead of being
+silently promoted back to `1.0`.
+
+### Adapters and the raw koanf handle
+
+Adapters are selected by name so you can switch implementations without code
+changes. `config.Load` returns a `*config.Loaded`, which carries both the decoded
+`Config` **and** the merged koanf handle; `config.AdapterSettings` cuts the
+`adapters.<port>.<type>` subtree off that handle and hands it to the adapter
+factory. An adapter is therefore configured entirely from its own subtree and
+never learns the application's configuration struct — and the application never
+grows one field per adapter.
+
+Because `Cut` returns a bare `*koanf.Koanf`, the subtree decode is done by
+`config.Unmarshal`, which reproduces the decoder goga uses for the top-level
+value (the `koanf` tag, weakly-typed input, and the duration/slice hooks that
+`session_ttl: 10m` depends on).
 
 ```yaml
 adapters:
@@ -58,8 +105,7 @@ adapters:
     type: http            # adapter name
     http:                 # settings for that adapter
       base_url: http://localhost:5007
-      username: admin@school-admin.com
-      password: 3OU4zn3q6Zh9
+      session_ttl: 10m
       retry: { max_retries: 3, wait_min: 200ms, wait_max: 2s }
   report_generator:
     type: pdf
@@ -68,11 +114,37 @@ adapters:
       organization: Greenwood High School
 ```
 
+### Credentials
+
+Upstream credentials are ordinary configuration keys, never written to a
+committed file. The deployment supplies them from the environment:
+
+```
+REPORT__ADAPTERS__STUDENT_REPOSITORY__HTTP__USERNAME
+REPORT__ADAPTERS__STUDENT_REPOSITORY__HTTP__PASSWORD
+```
+
+They are *not* read with `os.Getenv`. A value read that way answers to no
+precedence rule and cannot be overridden by a file or a flag, which is why
+`goga/lint`'s `gogaconfig` analyzer rejects `os.Getenv` outside `main`.
+
+### Wiring
+
+`config.Load[Config]` is generic, so wire cannot provide it: wire generates code
+from concrete types and cannot name a type argument. The project writes the one
+instantiation itself — `config.Load` in `internal/config` — and everything
+downstream of it is wired normally (`ProvideLoadedConfig` → `ProvideConfig`).
+
 ## Development
 
 This project follows **TDD** and the mandatory workflow in the repo-root
-[`AGENTS.md`](../AGENTS.md). Requires **Go 1.26.5**, Docker, and (for regenerating
-semantic conventions) the `otel/weaver` image.
+[`AGENTS.md`](../AGENTS.md). Requires **Go 1.27** (the floor `goga` propagates),
+Docker, and (for regenerating semantic conventions) the `otel/weaver` image.
+
+`make lint` needs **golangci-lint v2.13.2 or newer**: an older binary refuses to
+start against a `go 1.27` module, and it fails on *config load*, with a message
+that looks nothing like a version problem. CI sidesteps this by installing
+golangci-lint from source with the workflow's own toolchain.
 
 ```bash
 make help              # list targets

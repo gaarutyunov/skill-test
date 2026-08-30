@@ -11,7 +11,7 @@ import (
 
 // providerSet is the full dependency graph of the application.
 var providerSet = wire.NewSet(
-	ProvideKoanf,
+	ProvideLoadedConfig,
 	ProvideConfig,
 	ProvideLogger,
 	ProvideTelemetry,

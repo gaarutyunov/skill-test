@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -25,18 +24,21 @@ import (
 // HTTPStudentRepositoryConfig configures the upstream-backed student repository.
 type HTTPStudentRepositoryConfig struct {
 	BaseURL string `koanf:"base_url"`
-	// UsernameEnv / PasswordEnv name the environment variables the upstream
-	// credentials are read from. Credentials are NEVER stored in config files.
-	UsernameEnv string          `koanf:"username_env"`
-	PasswordEnv string          `koanf:"password_env"`
-	Retry       api.RetryConfig `koanf:"retry"`
+	// Username / Password are the upstream credentials. They are ordinary
+	// configuration keys, resolved by goga/config like every other key, and are
+	// NEVER written to a config file that is committed: the deployment supplies
+	// them from the environment as
+	// REPORT__ADAPTERS__STUDENT_REPOSITORY__HTTP__USERNAME and ...__PASSWORD.
+	//
+	// The previous shape — a `username_env` key naming the variable that
+	// os.Getenv then read — put a second, invisible source underneath the
+	// loader: a value read that way answers to no precedence rule and cannot be
+	// overridden by a file or a flag.
+	Username string          `koanf:"username"`
+	Password string          `koanf:"password"`
+	Retry    api.RetryConfig `koanf:"retry"`
 	// SessionTTL bounds how long a login session is reused before re-authenticating.
 	SessionTTL time.Duration `koanf:"session_ttl"`
-
-	// username/password are resolved from the environment at construction time;
-	// they are never populated from the config file.
-	username string
-	password string
 }
 
 // HTTPStudentRepository fetches students from the Node.js backend over HTTP.
@@ -74,19 +76,15 @@ type session struct {
 }
 
 // NewHTTPStudentRepository builds the repository with a retrying, instrumented
-// HTTP client. Upstream credentials are read from the environment variables
-// named by the config (username_env / password_env).
+// HTTP client. Upstream credentials come from the adapter's own settings
+// subtree, which in a deployment is populated from the environment.
 func NewHTTPStudentRepository(cfg HTTPStudentRepositoryConfig, tp trace.TracerProvider, mp metricapi.MeterProvider, logger *slog.Logger) (*HTTPStudentRepository, error) {
 	if cfg.BaseURL == "" {
 		return nil, errors.New("http student repository: base_url is required")
 	}
-	if cfg.UsernameEnv == "" || cfg.PasswordEnv == "" {
-		return nil, errors.New("http student repository: username_env and password_env are required")
-	}
-	cfg.username = os.Getenv(cfg.UsernameEnv)
-	cfg.password = os.Getenv(cfg.PasswordEnv)
-	if cfg.username == "" || cfg.password == "" {
-		return nil, fmt.Errorf("http student repository: credentials env %s/%s are not set", cfg.UsernameEnv, cfg.PasswordEnv)
+	if cfg.Username == "" || cfg.Password == "" {
+		return nil, errors.New("http student repository: username and password are required " +
+			"(set REPORT__ADAPTERS__STUDENT_REPOSITORY__HTTP__USERNAME and ...__PASSWORD)")
 	}
 	if cfg.SessionTTL <= 0 {
 		cfg.SessionTTL = 10 * time.Minute
@@ -244,8 +242,8 @@ func (r *HTTPStudentRepository) login(ctx context.Context, force bool) (*session
 	span.SetAttributes(semconv.UpstreamOperation("login"))
 
 	resp, err := r.client.LoginWithResponse(ctx, upstream.LoginJSONRequestBody{
-		Username: r.cfg.username,
-		Password: r.cfg.password,
+		Username: r.cfg.Username,
+		Password: r.cfg.Password,
 	})
 	if err != nil {
 		span.RecordError(err)
